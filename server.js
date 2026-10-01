@@ -1,6 +1,6 @@
 /**
  * WORKSCLAPIUS - Servidor Híbrido: Agente de WhatsApp (Baileys) + Portal Clínico Telemático
- * Arquitectura integrada estilo JusticIA / Alaricus
+ * Conforme a la regla global de canal enlazado, anti-bucles y activación estricta
  */
 
 const express = require('express');
@@ -28,7 +28,7 @@ const SESSIONS_FILE = path.join(__dirname, 'exam_sessions.json');
 
 if (!fs.existsSync(AUTH_FOLDER)) fs.mkdirSync(AUTH_FOLDER, { recursive: true });
 
-// Almacén de sesiones en memoria y archivo
+// Almacén de sesiones clínicas en memoria y archivo
 let examSessions = new Map();
 if (fs.existsSync(SESSIONS_FILE)) {
   try {
@@ -49,10 +49,28 @@ function persistSessions() {
 // Estados conversacionales de usuarios de WhatsApp: senderJid -> state
 const userConversations = new Map();
 
+// Desempaquetador seguro de mensajes
+function extractMessageText(rawMsg) {
+  if (!rawMsg) return '';
+  const message = rawMsg.ephemeralMessage?.message ||
+                  rawMsg.viewOnceMessage?.message ||
+                  rawMsg.viewOnceMessageV2?.message ||
+                  rawMsg.documentWithCaptionMessage?.message ||
+                  rawMsg;
+
+  return (
+    message.conversation ||
+    message.extendedTextMessage?.text ||
+    message.imageMessage?.caption ||
+    message.documentMessage?.caption ||
+    ''
+  ).trim();
+}
+
 // Express App
 const app = express();
-app.use(express.json({ limit: '20mb' }));
-app.use(express.urlencoded({ extended: true, limit: '20mb' }));
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
 // Servir archivos estáticos del portal clínico
 app.use(express.static(__dirname));
@@ -132,6 +150,24 @@ server.listen(PORT, () => {
 let waSocketInstance = null;
 let isConnectingWA = false;
 
+// Ignorar advertencias no críticas de Signal
+const originalConsoleError = console.error;
+console.error = function(...args) {
+  const msg = args.map(a => (typeof a === 'string' ? a : (a?.message || ''))).join(' ');
+  if (msg.includes('Failed to decrypt message') || msg.includes('Bad MAC') || msg.includes('MessageCounterError') || msg.includes('SessionEntry')) {
+    return;
+  }
+  originalConsoleError.apply(console, args);
+};
+
+process.on('unhandledRejection', (reason) => {
+  const msg = reason?.message || String(reason);
+  if (msg.includes('Connection Closed') || msg.includes('prekey') || msg.includes('SessionEntry') || msg.includes('428') || msg.includes('440')) {
+    return;
+  }
+  console.warn('⚠️ [UnhandledRejection Warning]:', msg);
+});
+
 async function startWhatsAppBot() {
   if (isConnectingWA) return;
   isConnectingWA = true;
@@ -175,7 +211,12 @@ async function startWhatsAppBot() {
           setTimeout(startWhatsAppBot, 5000);
         }
       } else if (connection === 'open') {
-        console.log('\n✅ [WhatsApp Conectado] Agente de Salud Laboral IPS en línea y listo para recibir postulantes.');
+        const userJid = sock.user ? sock.user.id.replace(/:.*@/, '@') : 'Desconocido';
+        console.log('\n========================================================================');
+        console.log(`✅ [WhatsApp Conectado] Agente de Salud Laboral IPS en línea.`);
+        console.log(`📱 Línea Activa Enlazada: [${userJid}]`);
+        console.log(`🔑 Canal Autorizado: Conversación con el mismo número enlazado o comandos (!examen, !hola)`);
+        console.log('========================================================================\n');
         isConnectingWA = false;
       }
     });
@@ -183,21 +224,43 @@ async function startWhatsAppBot() {
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
       if (type !== 'notify') return;
       for (const msg of messages) {
-        if (!msg.message || msg.key.fromMe) continue;
+        if (!msg.message) continue;
 
         const senderJid = msg.key.remoteJid;
-        if (!senderJid || senderJid.endsWith('@g.us')) continue;
+        if (!senderJid || isJidGroup(senderJid) || isJidBroadcast(senderJid) || isJidNewsletter(senderJid)) continue;
 
-        const text = (
-          msg.message.conversation ||
-          msg.message.extendedTextMessage?.text ||
-          ''
-        ).trim();
-
+        const text = extractMessageText(msg.message);
         if (!text) continue;
-        console.log(`📩 [WhatsApp Mensaje] De ${senderJid}: "${text}"`);
 
-        await handleWhatsAppConversation(sock, senderJid, text);
+        // Anti-Echo Guard: Si el texto contiene la firma del bot, ignorar para evitar bucles
+        if (text.includes('Salud Laboral IPS') || text.includes('Worksculapius') || text.includes('EXAM-') || text.includes('Certificado_Aptitud_Laboral')) {
+          continue;
+        }
+
+        // Identificación del canal enlazado propio (Self-Chat)
+        const myJid = sock.user ? sock.user.id.replace(/:.*@/, '@') : '';
+        const myLid = sock.user?.lid ? sock.user.lid.replace(/:.*@/, '@') : '';
+        const myCleanNumber = myJid ? myJid.replace(/[^0-9]/g, '') : '';
+        const senderNumber = senderJid.replace(/[^0-9]/g, '');
+
+        const isSelfChat = (senderJid === myJid) || (myLid && senderJid === myLid) || (myCleanNumber && senderNumber.includes(myCleanNumber));
+        const isActivationBang = text.toLowerCase().startsWith('!examen') || 
+                                 text.toLowerCase().startsWith('!hola') || 
+                                 text.toLowerCase().startsWith('!salud') || 
+                                 text.toLowerCase().startsWith('!start');
+
+        // REGLA GLOBAL: Solo atender si es el canal de conversación con el propio número enlazado
+        // O si inicia con un comando de activación explícito en canales autorizados
+        const isSessionOngoing = userConversations.has(senderJid);
+
+        if (!isSelfChat && !isActivationBang && !isSessionOngoing) {
+          // Ignorar conversaciones ajenas cotidianas para no interferir
+          continue;
+        }
+
+        console.log(`\n📩 [WhatsApp Inbound] De: [${senderNumber}] | SelfChat: ${isSelfChat} | Msg: "${text}"`);
+
+        await handleWhatsAppConversation(sock, senderJid, text, isSelfChat);
       }
     });
 
@@ -207,18 +270,51 @@ async function startWhatsAppBot() {
   }
 }
 
-async function handleWhatsAppConversation(sock, senderJid, text) {
+async function handleWhatsAppConversation(sock, senderJid, text, isSelfChat) {
   let userState = userConversations.get(senderJid) || { step: 0, candidate: {} };
 
-  // Paso 0: Bienvenida inicial
+  const cleanText = text.replace(/^!([a-zA-Z0-9]+)\s*/i, '').trim();
+
+  // Si el usuario escribe "!examen" o "!reiniciar" en cualquier momento, reinicia el flujo
+  if (text.toLowerCase().includes('!reiniciar') || text.toLowerCase() === '!examen' || text.toLowerCase() === '!start') {
+    userState = { step: 0, candidate: {} };
+    userConversations.delete(senderJid);
+  }
+
+  // Paso 0: Bienvenida inicial y entrega inmediata del enlace telemático
   if (userState.step === 0) {
     userState.step = 1;
+
+    // Generar Token de sesión inmediatamente para permitir acceso rápido
+    const token = 'EXAM-' + Date.now().toString(36).toUpperCase() + '-' + Math.floor(1000 + Math.random() * 9000);
+    userState.token = token;
+    userState.candidate = {
+      fullName: 'Postulante Ocupacional',
+      docNumber: senderJid.replace(/[^0-9]/g, ''),
+      jobTitle: 'Aspirante General',
+      companyName: 'Empresa Contratante'
+    };
+
+    const sessionData = {
+      token,
+      senderJid,
+      candidate: userState.candidate,
+      createdAt: new Date().toISOString()
+    };
+    examSessions.set(token, sessionData);
+    persistSessions();
     userConversations.set(senderJid, userState);
+
+    const examUrl = `http://localhost:${PORT}/?token=${token}`;
 
     const welcomeMsg = 
       `¡Hola! 👋 Te damos la bienvenida a la línea oficial de *Salud Laboral IPS* asistida por *Worksculapius*.\n\n` +
-      `Soy tu asistente médico virtual para la realización de tu *Examen Médico Preocupacional (Ingreso Laboral)* conforme a la Resolución 2346 de 2007.\n\n` +
-      `Para comenzar, por favor escríbeme tu *Nombre Completo*:`;
+      `Tu orden de *Examen Médico Preocupacional (Ingreso Laboral)* conforme a la *Resolución 2346 de 2007* ha sido habilitada.\n\n` +
+      `🚀 *Puedes ingresar inmediatamente a realizar tus pruebas en:*\n` +
+      `🔗 ${examUrl}\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `📋 *¿Deseas personalizar tu ficha antes de iniciar?*\n` +
+      `Por favor responde a este mensaje con tu *Nombre Completo* (o haz clic directo en el enlace de arriba).`;
 
     await sock.sendMessage(senderJid, { text: welcomeMsg });
     return;
@@ -226,33 +322,52 @@ async function handleWhatsAppConversation(sock, senderJid, text) {
 
   // Paso 1: Captura de Nombre
   if (userState.step === 1) {
-    userState.candidate.fullName = text;
+    if (cleanText) userState.candidate.fullName = cleanText;
     userState.step = 2;
     userConversations.set(senderJid, userState);
 
+    // Actualizar sesión persistida
+    if (examSessions.has(userState.token)) {
+      const sess = examSessions.get(userState.token);
+      sess.candidate = userState.candidate;
+      persistSessions();
+    }
+
     await sock.sendMessage(senderJid, {
-      text: `Mucho gusto, *${text}*. 📋\n\nPor favor indícanos tu *Número de Cédula o Documento de Identidad*:`
+      text: `Mucho gusto, *${userState.candidate.fullName}*. 📋\n\nPor favor indícanos tu *Número de Cédula o Documento de Identidad*:`
     });
     return;
   }
 
   // Paso 2: Captura de Documento
   if (userState.step === 2) {
-    userState.candidate.docNumber = text;
+    if (cleanText) userState.candidate.docNumber = cleanText;
     userState.step = 3;
     userConversations.set(senderJid, userState);
 
+    if (examSessions.has(userState.token)) {
+      const sess = examSessions.get(userState.token);
+      sess.candidate = userState.candidate;
+      persistSessions();
+    }
+
     await sock.sendMessage(senderJid, {
-      text: `Gracias. ¿A qué *Cargo o Puesto de Trabajo* aspiras ingresar?\n\n_(Ejemplos: Conductor, Operario de Planta, Asistente Administrativo, Técnico de Alturas, Bodeguero)_:`
+      text: `Documento registrado: *${userState.candidate.docNumber}*.\n\n¿A qué *Cargo o Puesto de Trabajo* aspiras ingresar?\n_(Ejemplos: Conductor, Operario de Planta, Asistente Administrativo, Trabajo en Alturas)_:`
     });
     return;
   }
 
   // Paso 3: Captura de Cargo
   if (userState.step === 3) {
-    userState.candidate.jobTitle = text;
+    if (cleanText) userState.candidate.jobTitle = cleanText;
     userState.step = 4;
     userConversations.set(senderJid, userState);
+
+    if (examSessions.has(userState.token)) {
+      const sess = examSessions.get(userState.token);
+      sess.candidate = userState.candidate;
+      persistSessions();
+    }
 
     await sock.sendMessage(senderJid, {
       text: `Excelente. ¿Para cuál *Empresa o Razón Social* vas a laborar? _(O escribe 'Particular / Independiente')_:`
@@ -260,55 +375,42 @@ async function handleWhatsAppConversation(sock, senderJid, text) {
     return;
   }
 
-  // Paso 4: Captura de Empresa y Generación del Token de Enlace Web
+  // Paso 4: Captura de Empresa y Confirmación Final con Enlace Actualizado
   if (userState.step === 4) {
-    userState.candidate.companyName = text;
+    if (cleanText) userState.candidate.companyName = cleanText;
     userState.step = 5;
 
-    // Generar Token de sesión único
-    const token = 'EXAM-' + Date.now().toString(36).toUpperCase() + '-' + Math.floor(1000 + Math.random() * 9000);
-    const sessionData = {
-      token,
-      senderJid,
-      candidate: userState.candidate,
-      createdAt: new Date().toISOString()
-    };
-
-    examSessions.set(token, sessionData);
-    persistSessions();
+    if (examSessions.has(userState.token)) {
+      const sess = examSessions.get(userState.token);
+      sess.candidate = userState.candidate;
+      persistSessions();
+    }
     userConversations.set(senderJid, userState);
 
-    const examUrl = `http://localhost:${PORT}/?token=${token}`;
+    const examUrl = `http://localhost:${PORT}/?token=${userState.token}`;
 
     const linkMsg = 
-      `✅ *¡Cita Ocupacional Programada con Éxito!*\n\n` +
+      `✅ *¡Ficha Ocupacional Actualizada al 100%!* 🎉\n\n` +
       `👤 *Postulante:* ${userState.candidate.fullName}\n` +
       `🆔 *Documento:* ${userState.candidate.docNumber}\n` +
       `💼 *Cargo:* ${userState.candidate.jobTitle}\n` +
       `🏢 *Empresa:* ${userState.candidate.companyName}\n\n` +
-      `Tu evaluación telemática incluye:\n` +
-      `1️⃣ *Anamnesis Ocupacional Oficial* (Res. 2346/2007)\n` +
-      `2️⃣ *Visiometría Digital* (Agudeza Snellen + Ishihara para daltonismo)\n` +
-      `3️⃣ *Audiometría Tonal Binaural* (Web Audio API en frecuencias 500-8000 Hz)\n\n` +
-      `🔗 *Haz clic aquí para ingresar a la plataforma clínica y realizar tus exámenes:*\n` +
+      `🔗 *Haz clic aquí para ingresar a tu evaluación telemática:*\n` +
       `${examUrl}\n\n` +
-      `_(Se recomienda realizar la prueba con audífonos puestos y a 50 cm de la pantalla. Al finalizar, tu certificado médico en PDF con código QR y firma digital se te enviará automáticamente por este mismo chat)._`;
+      `_(Al finalizar tus pruebas de Visiometría y Audiometría en la página web, tu Certificado Oficial en PDF con firma médica y código QR se te despachará automáticamente por este mismo chat)._`;
 
     await sock.sendMessage(senderJid, { text: linkMsg });
     return;
   }
 
-  // Si ya tiene sesión activa
+  // Paso 5: Ya tiene el enlace activo
   if (userState.step === 5) {
+    const examUrl = `http://localhost:${PORT}/?token=${userState.token}`;
     await sock.sendMessage(senderJid, {
-      text: `Ya tienes una orden de examen abierta. Ingresa al enlace enviado anteriormente para completar tus pruebas de visiometría y audiometría.`
+      text: `Tu orden de examen médico ocupacional sigue activa.\n\nPuedes ingresar a completar tus pruebas en:\n🔗 ${examUrl}\n\n_(Si deseas reiniciar tu registro con otros datos, escribe *!reiniciar*)_`
     });
   }
 }
 
-// Iniciar bot de WhatsApp (si Baileys está instalado)
-try {
-  startWhatsAppBot();
-} catch (e) {
-  console.log('WhatsApp Baileys no inicializado aún.');
-}
+// Iniciar bot de WhatsApp Baileys
+startWhatsAppBot();
