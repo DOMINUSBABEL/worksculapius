@@ -1,0 +1,11 @@
+# OS & Temp
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+
+# Vercel
+.vercel
+
+# Node
+node_modules/

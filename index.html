@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WORKSCLAPIUS - Exámenes Médicos Ocupacionales Autónomos con IA</title>
+  
+  <!-- Google Fonts: Outfit & Plus Jakarta Sans (Impeccable Taste) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="css/styles.css">
+
+  <!-- jsPDF & QRCode UMD via CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.1/qrcode.min.js"></script>
+</head>
+<body>
+
+  <!-- Top Navigation Bar -->
+  <header class="top-nav">
+    <div class="nav-container">
+      <div class="logo-area" onclick="location.reload()">
+        <div class="logo-badge">⚕️</div>
+        <div class="logo-text">
+          <h1>WORKSCLAPIUS <span class="version-tag">MVP IA</span></h1>
+          <p>Medicina del Trabajo & Exámenes Ocupacionales Telemáticos</p>
+        </div>
+      </div>
+
+      <nav class="nav-tabs">
+        <button id="tabWA" class="nav-tab-btn">
+          <span>💬</span> Onboarding WhatsApp
+        </button>
+        <button id="tabExam" class="nav-tab-btn active">
+          <span>🩺</span> Examen Clínico
+        </button>
+        <button id="tabDashboard" class="nav-tab-btn">
+          <span>📊</span> Panel IPS / Empresas
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Progress Stepper (Only visible during clinical evaluation) -->
+  <div id="stepperContainer" class="stepper-container">
+    <div class="stepper-bar">
+      <div id="stepNode1" class="stepper-step active">
+        <div class="step-node">1</div>
+        <span class="step-label">Anamnesis</span>
+      </div>
+      <div id="stepNode2" class="stepper-step">
+        <div class="step-node">2</div>
+        <span class="step-label">Visiometría</span>
+      </div>
+      <div id="stepNode3" class="stepper-step">
+        <div class="step-node">3</div>
+        <span class="step-label">Audiometría</span>
+      </div>
+      <div id="stepNode4" class="stepper-step">
+        <div class="step-node">4</div>
+        <span class="step-label">Dictamen IA</span>
+      </div>
+      <div id="stepNode5" class="stepper-step">
+        <div class="step-node">5</div>
+        <span class="step-label">Certificado</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main View Container -->
+  <main class="app-content">
+    
+    <!-- View 1: WhatsApp Onboarding Simulation -->
+    <section id="viewWA" style="display: none;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <span style="font-size: 0.8rem; background: rgba(37,211,102,0.15); color: #25d366; border: 1px solid rgba(37,211,102,0.3); padding: 4px 12px; border-radius: 20px; font-weight: 600;">
+          Punto de Entrada Omnicanal (WhatsApp Bot)
+        </span>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 6px;">
+          Simula cómo un trabajador o empresa contacta a la IPS para agendar su examen y recibe su enlace personalizado.
+        </p>
+      </div>
+      <div id="waChatContainer"></div>
+    </section>
+
+    <!-- View 2: Patient Clinical Examination Flow -->
+    <section id="viewExam">
+      <div id="examStepContainer">
+        <!-- Injected dynamically by OccupationalQuestionnaire, VisiometryTest, AudiometryTest, ClinicalAIEngine -->
+      </div>
+    </section>
+
+    <!-- View 3: IPS / Corporate Dashboard -->
+    <section id="viewDashboard" style="display: none;">
+      <div id="dashboardContainer">
+        <!-- Injected dynamically by IPSDashboard -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Legal & Technical Footer -->
+  <footer style="border-top: 1px solid var(--border-subtle); padding: 24px; text-align: center; color: var(--text-muted); font-size: 0.78rem;">
+    <div style="max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px;">
+      <div>
+        <strong>WORKSCLAPIUS</strong> — Plataforma Autónoma de Medicina del Trabajo asistida por Inteligencia Artificial.
+      </div>
+      <div>
+        Conformidad biomédica estricta: Resolución 2346 de 2007 (Ministerio de la Protección Social de Colombia) y guías internacionales OIT / OMS.
+      </div>
+      <div style="color: #64748b; font-size: 0.72rem;">
+        Web Audio API v2.0 • Snellen & Ishihara Calibrated Optotypes • Cryptographic QR Validation
+      </div>
+    </div>
+  </footer>
+
+  <!-- Scripts -->
+  <script src="js/whatsapp-simulator.js"></script>
+  <script src="js/questionnaire.js"></script>
+  <script src="js/visiometry.js"></script>
+  <script src="js/audiometry.js"></script>
+  <script src="js/clinical-ai.js"></script>
+  <script src="js/payment.js"></script>
+  <script src="js/certificate-pdf.js"></script>
+  <script src="js/dashboard.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
