@@ -3,9 +3,13 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
+  const urlParams = new URLSearchParams(window.location.search);
+  const sessionToken = urlParams.get('token');
+
   const state = {
     activeView: 'exam', // 'wa' | 'exam' | 'dashboard'
     examStep: 1, // 1: Anamnesis, 2: Visiometry, 3: Audiometry, 4: Diagnosis, 5: Payment/Cert
+    sessionToken: sessionToken || null,
     candidate: {
       fullName: 'Juan Esteban Gómez',
       docNumber: '1.037.649.201',
@@ -192,7 +196,28 @@ document.addEventListener('DOMContentLoaded', () => {
       state.audiometry,
       state.evaluation,
       state.payment
-    );
+    ).then((pdfDoc) => {
+      // Si hay backend y token de sesión, notificar al agente de WhatsApp
+      if (pdfDoc && state.sessionToken) {
+        try {
+          const pdfBase64 = pdfDoc.output('datauristring');
+          fetch('/api/exam/complete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              token: state.sessionToken,
+              candidate: state.candidate,
+              evaluation: state.evaluation,
+              pdfBase64: pdfBase64
+            })
+          }).then(r => r.json()).then(data => {
+            console.log('✅ Certificado despachado a WhatsApp:', data);
+          }).catch(err => console.log('WhatsApp dispatch skip (local mode):', err));
+        } catch (e) {
+          console.log('PDF export string note:', e);
+        }
+      }
+    });
 
     // Save into IPS Dashboard records
     if (window.ipsDashboardInstance) {
@@ -228,6 +253,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Initial step start
-  loadExamStep(1);
+  // Pre-carga si viene de WhatsApp mediante token
+  if (state.sessionToken) {
+    fetch(`/api/session/${state.sessionToken}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.session && data.session.candidate) {
+          state.candidate = Object.assign(state.candidate, data.session.candidate);
+          console.log('✅ Datos de postulante cargados desde WhatsApp:', state.candidate);
+        }
+        loadExamStep(1);
+      })
+      .catch(() => {
+        loadExamStep(1);
+      });
+  } else {
+    // Initial step start
+    loadExamStep(1);
+  }
 });

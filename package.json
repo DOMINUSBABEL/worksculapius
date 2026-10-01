@@ -1,0 +1,28 @@
+{
+  "name": "worksculapius",
+  "version": "1.0.0",
+  "description": "Worksculapius: Plataforma de Exámenes Médicos Ocupacionales con IA y Agente de WhatsApp Baileys (Res. 2346/2007)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "web": "node -e \"const http=require('http'), fs=require('fs'), path=require('path'); http.createServer((req,res)=>{ let f = req.url === '/' ? '/index.html' : req.url; let p = path.join(__dirname, f); if(fs.existsSync(p)){ res.writeHead(200); fs.createReadStream(p).pipe(res); } else { res.writeHead(404); res.end('Not found'); } }).listen(3000, ()=>console.log('Web running at http://localhost:3000'));\""
+  },
+  "keywords": [
+    "salud-ocupacional",
+    "medicina-del-trabajo",
+    "baileys",
+    "whatsapp",
+    "audiometria",
+    "visiometria",
+    "colombia"
+  ],
+  "author": "Worksculapius Healthcare AI",
+  "license": "MIT",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.18",
+    "express": "^4.21.2",
+    "pino": "^9.6.0",
+    "qrcode-terminal": "^0.12.0",
+    "dotenv": "^16.4.7"
+  }
+}
